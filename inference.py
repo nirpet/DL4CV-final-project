@@ -25,9 +25,6 @@ def visualize_images(images, num_rows=2, num_cols=5):
     plt.tight_layout()
     plt.show()
 
-
-NUM_OF_SAMPLES=10
-# Define any necessary preprocessing functions if needed
 def generate_noisy_images(image, num_of_samples):
     """
     Generate noisy samples of an input image.
@@ -57,10 +54,22 @@ def generate_noisy_images(image, num_of_samples):
 
     return noisy_images
 
-# Perform inference using the loaded model
-def predict(model, input_image, visualize=False):
+def predict(model, input_image, num_of_samples=10, visualize=False):
+    """
+    Perform inference using the loaded model on noisy samples of an input image,
+    and return the majority vote prediction.
+
+    Args:
+    - model: The pre-trained neural network model.
+    - input_image (torch.Tensor): Input image tensor.
+    - num_of_samples (int): Number of noisy samples to generate. Default is 10.
+    - visualize (bool): Whether to visualize the noisy images. Default is False.
+
+    Returns:
+    - majority_vote_prediction (torch.Tensor): Majority vote prediction in one-hot format.
+    """
     input_data = torch.tensor(input_image).float()
-    noisy_images = generate_noisy_images(input_data, NUM_OF_SAMPLES)
+    noisy_images = generate_noisy_images(input_data, num_of_samples)
 
     predictions = torch.empty(len(noisy_images), dtype=torch.float32)
     with torch.no_grad():
