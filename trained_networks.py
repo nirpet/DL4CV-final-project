@@ -13,6 +13,10 @@ from PIL import Image
 from tensorflow.keras.preprocessing import image
 import numpy as np
 import torch
+
+import inference
+
+
 def train_and_save_model_on_MNIST_dataset():
 
     (train_images, train_labels), (test_images, test_labels) = mnist.load_data()
@@ -107,50 +111,34 @@ def test_gpt_attack():
     # Get the gradients of the loss w.r.t to the input image.
     gradient = tape.gradient(loss, image)
     # Get the sign of the gradients to create the perturbation
-    epsilon = 0.15  # Small enough to be imperceptible, yet large enough to cause misclassification
+    epsilon = 0.2 # Small enough to be imperceptible, yet large enough to cause misclassification
     perturbed_image = fgsm_attack(image, epsilon, gradient)
     logits = model(perturbed_image)
     prediction = tf.argmax(logits, axis=1)
-    print("Predicted label for adversarial example:", prediction.numpy())
+    print("Predicted label for adversarial NO DEFENCE", prediction.numpy())
+    inference_prediction = inference.predict(model,perturbed_image, visualize=True)
+    print("Predicted label for adversarial WITH DEFENCE", inference_prediction.numpy())
+
 
     # random_image_to_show = random_image.reshape(28, 28)  # Reshape for plotting
     tf.experimental.numpy.experimental_enable_numpy_behavior()
-    random_image_to_show = perturbed_image.reshape(28, 28)  # Reshape for plotting
+    adversarial_perturbed_image_to_show = perturbed_image.reshape(28, 28)
+    original_image_to_show = random_image.reshape(28, 28)# Reshape for plotting
 
     # Display the image
-    plt.imshow(random_image_to_show, cmap='gray')
-    plt.title("Random Image from Test Set")
+    plt.imshow(adversarial_perturbed_image_to_show, cmap='gray')
+    plt.title("adversarial perturbed image")
+    plt.show()
+
+    plt.imshow(original_image_to_show, cmap='gray')
+    plt.title("Original image")
     plt.show()
 
 
-
-    print(f"Model prediction: {predicted_class[0]}", )
+    print(f"original image Model prediction: {predicted_class[0]}", )
     print(prediction)
 
-    # num_examples = 50
-    # subset_indices = np.random.choice(x_test.shape[0], num_examples, replace=False)
-    # x_test_subset = x_test[subset_indices]
-    # y_test_subset = y_test[subset_indices]
-    #
-    # # Generate adversarial examples for the subset
-    # # Note: This assumes `ifgsm_attack` is defined and ready to use
-    # x_test_adv_subset = np.array(
-    #     [fgsm_attack(image, epsilon).numpy() for image in x_test_subset])
-    #
-    # # Ensure data shape compatibility with the model if needed
-    # # This step might vary depending on your model's expected input shape
-    # x_test_adv_subset = x_test_adv_subset.reshape(num_examples, 28, 28)
-    #
-    # # Evaluate the model on the original subset
-    # loss_orig, accuracy_orig = model.evaluate(x_test_subset, y_test_subset, verbose=0)
-    # print(f"Accuracy on Original Examples: {accuracy_orig * 100:.2f}%")
-    #
-    # # Evaluate the model on the adversarial subset
-    # loss_adv, accuracy_adv = model.evaluate(x_test_adv_subset, y_test_subset, verbose=0)
-    # print(f"Accuracy on Adversarial Examples: {accuracy_adv * 100:.2f}%")
 
-
-# test_fool_box()
 test_gpt_attack()
 
 
