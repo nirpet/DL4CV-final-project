@@ -2,6 +2,7 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 import tensorflow as tf
+import cv2
 
 
 def visualize_images(images, num_rows=2, num_cols=5):
@@ -27,7 +28,7 @@ def visualize_images(images, num_rows=2, num_cols=5):
     plt.tight_layout()
     plt.show()
 
-def generate_noisy_images(image, num_of_samples):
+def generate_noisy_images(image, num_of_samples, noise_range):
     """
     Generate noisy samples of an input image.
 
@@ -42,8 +43,6 @@ def generate_noisy_images(image, num_of_samples):
     shape = list(image.shape)
     shape[0] = num_of_samples
     noisy_images = torch.empty(tuple(shape))
-    noise_range = 100
-
     # Gaussian noise
     # std_dev = 10
 
@@ -54,11 +53,15 @@ def generate_noisy_images(image, num_of_samples):
         noise = torch.randint(-noise_range, noise_range + 1, size=tuple(image.shape))/255
         noisy_image = image + noise
         noisy_image = torch.clamp(noisy_image, 0, 1)
+        # blurred_image = cv2.GaussianBlur(np.array(noisy_image).reshape(28, 28), (3, 3), 0)
+        #
+        # # If you need to convert it back to the original shape [1, 28, 28, 1]
+        # noisy_image = torch.tensor(blurred_image.reshape(1, 28, 28, 1))
         noisy_images[i] = noisy_image
 
     return noisy_images
 
-def predict(model, input_image, num_of_samples=10, visualize=False):
+def predict(model, input_image, num_of_samples=10, noise_range = 150, visualize=False):
     """
     Perform inference using the loaded model on noisy samples of an input image,
     and return the majority vote prediction.
@@ -72,8 +75,16 @@ def predict(model, input_image, num_of_samples=10, visualize=False):
     Returns:
     - majority_vote_prediction (torch.Tensor): Majority vote prediction in one-hot format.
     """
+    # input_data = convert_tf_to_torch(input_image) if type(input_image) == tf.Tensor else input_image
     input_data = convert_tf_to_torch(input_image)
-    noisy_images = generate_noisy_images(input_data, num_of_samples)
+    # Apply Gaussian Blur (Lowpass Filter)
+    # Here, (3, 3) is the kernel size, and 0 lets OpenCV automatically select the sigma based on the kernel size
+    blurred_image = cv2.GaussianBlur(np.array(input_data).reshape(28, 28), (5, 5), 0)
+    #
+    # # If you need to convert it back to the original shape [1, 28, 28, 1]
+    input_data = blurred_image.reshape(1, 28, 28, 1)
+    input_data = torch.tensor(input_data)
+    noisy_images = generate_noisy_images(input_data, num_of_samples, noise_range)
 
     if visualize:
         visualize_images(noisy_images)
@@ -90,11 +101,13 @@ def predict(model, input_image, num_of_samples=10, visualize=False):
     one_hot_predictions.scatter_(1, max_indices.unsqueeze(1), 1)
 
     # Calculate the mode (most common value) of the one-hot predictions
+    confidance_rate = torch.sum(one_hot_predictions,dim=0)/num_of_samples
+    # print("Confidence: ", confidance_rate)
     majority_vote_prediction = torch.mode(one_hot_predictions, dim=0)[0]
 
 
-
-    return majority_vote_prediction
+    # print(majority_vote_prediction)
+    return majority_vote_prediction, confidance_rate
 
 def convert_tf_to_torch(tf_input):
     np_image = tf_input.numpy()
