@@ -1,7 +1,5 @@
 import torch
-import numpy as np
 import matplotlib.pyplot as plt
-import tensorflow as tf
 
 
 def visualize_images(images, num_rows=2, num_cols=5):
@@ -27,13 +25,15 @@ def visualize_images(images, num_rows=2, num_cols=5):
     plt.tight_layout()
     plt.show()
 
-def generate_noisy_images(image, num_of_samples):
+
+def generate_noisy_images(image, num_of_samples, noise_range):
     """
     Generate noisy samples of an input image.
 
     Args:
     - image (torch.Tensor): Input image tensor.
     - num_of_samples (int): Number of noisy samples to generate.
+    - noise_range (float): Range of noise to add to the generated image.
 
     Returns:
     - noisy_images (torch.Tensor): Tensor containing noisy samples of the input image.
@@ -42,7 +42,6 @@ def generate_noisy_images(image, num_of_samples):
     shape = list(image.shape)
     shape[0] = num_of_samples
     noisy_images = torch.empty(tuple(shape))
-    noise_range = 100
 
     # Gaussian noise
     # std_dev = 10
@@ -51,14 +50,16 @@ def generate_noisy_images(image, num_of_samples):
     for i in range(num_of_samples):
         # Gaussian noise
         # noise = torch.randn(image.shape) * std_dev
-        noise = torch.randint(-noise_range, noise_range + 1, size=tuple(image.shape))/255
+        noise = torch.randint(-noise_range, noise_range + 1, size=tuple(image.shape)) / 255
+        noise = noise.to(image.device)
         noisy_image = image + noise
         noisy_image = torch.clamp(noisy_image, 0, 1)
         noisy_images[i] = noisy_image
 
     return noisy_images
 
-def predict(model, input_image, num_of_samples=10, visualize=False):
+
+def predict(model, input_image, num_of_samples=10, noise_range=100,  visualize=False):
     """
     Perform inference using the loaded model on noisy samples of an input image,
     and return the majority vote prediction.
@@ -72,16 +73,16 @@ def predict(model, input_image, num_of_samples=10, visualize=False):
     Returns:
     - majority_vote_prediction (torch.Tensor): Majority vote prediction in one-hot format.
     """
-    input_data = convert_tf_to_torch(input_image)
-    noisy_images = generate_noisy_images(input_data, num_of_samples)
+    input_data = input_image
+    noisy_images = generate_noisy_images(input_data, num_of_samples, noise_range)
 
     if visualize:
         visualize_images(noisy_images)
 
-    predictions = torch.empty((len(noisy_images),10))
+    predictions = torch.empty((len(noisy_images), 10))
     with torch.no_grad():
         for i in range(noisy_images.shape[0]):
-            prediction = convert_tf_to_torch(model(convert_torch_to_tf(noisy_images[i].unsqueeze(0))))
+            prediction = (model(noisy_images[i].unsqueeze(0)))
             predictions[i] = prediction.squeeze()
 
     # Discretize predictions to one-hot vectors
@@ -92,21 +93,4 @@ def predict(model, input_image, num_of_samples=10, visualize=False):
     # Calculate the mode (most common value) of the one-hot predictions
     majority_vote_prediction = torch.mode(one_hot_predictions, dim=0)[0]
 
-
-
-    return majority_vote_prediction
-
-def convert_tf_to_torch(tf_input):
-    np_image = tf_input.numpy()
-
-    # Step 2: Convert NumPy array to PyTorch tensor
-    return torch.from_numpy(np_image)
-
-def convert_torch_to_tf(torch_input):
-    # Assuming torch_tensor is your PyTorch tensor
-    # Step 1: Move tensor to CPU if it's on GPU, then convert it to NumPy array
-    torch_tensor_cpu = torch_input.cpu().numpy()
-
-    # Step 2: Convert NumPy array to TensorFlow tensor
-    tensor_flow = tf.convert_to_tensor(torch_tensor_cpu)
-    return tensor_flow
+    return majority_vote_prediction.unsqueeze(0)
