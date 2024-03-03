@@ -35,8 +35,12 @@ def train_and_save_model_on_MNIST_dataset():
     model.add(Dense(10, activation='softmax'))
     model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
 
-    model.save('/model_for_MNIST_dataset')
+    model.save('/models/model_for_MNIST_dataset.keras')
 
+
+# print('start')
+# train_and_save_model_on_MNIST_dataset()
+# print('end')
 
 def save_resnet50_model():
     # Load the ResNet50 model pre-trained on ImageNet
@@ -129,7 +133,6 @@ def print_results(original_image, advesarial_image, original_predicted_class, ad
                   adversarial_prediction_with_defence_class):
     print(f"Original image Model prediction: {original_predicted_class[0]}", )
     print("Predicted label for adversarial NO DEFENCE", adversarial_prediction_no_defence_class)
-
     print("Predicted label for adversarial WITH DEFENCE", adversarial_prediction_with_defence_class)
 
     # random_image_to_show = random_image.reshape(28, 28)  # Reshape for plotting
@@ -149,41 +152,32 @@ def print_results(original_image, advesarial_image, original_predicted_class, ad
     return original_predicted_class == adversarial_prediction_with_defence_class
 
 
-model_path = '/Users/michaelsieradzki/PycharmProjects/DL4CV-final-project/my_model_savedmodel'
+model_path = '/models/model_for_MNIST_dataset.keras'
 model = load_model(model_path)
 
 
 def success_defence_rate(iters=50, num_of_samples=10, noise_range=140, epsilon=0.2):
     success_defence_counter = 0
     no_defence_counter = 0
-    true_label_confidance_rate=0
+    true_label_confidence_rate = 0
     for i in range(iters):
-        original_image, advesarial_image, original_predicted_class, adversarial_predicted_no_defence_class = generate_attack(
+        original_image, adversarial_image, original_predicted_class, adversarial_predicted_no_defence_class = generate_attack(
             model, epsilon)
-        adversarial_predicted_with_defence,confidance_rate = inference.predict(model, advesarial_image, num_of_samples=num_of_samples,
-                                                               noise_range=noise_range, visualize=False)
+        adversarial_predicted_with_defence, confidence_rate = inference.predict(model, adversarial_image,
+                                                                                num_of_samples=num_of_samples,
+                                                                                noise_range=noise_range,
+                                                                                visualize=False)
         adversarial_predicted_with_defence_class = np.argmax(adversarial_predicted_with_defence.numpy())
         success_defence_counter += 1 if adversarial_predicted_with_defence_class == original_predicted_class else 0
-        true_label_confidance_rate += confidance_rate[original_predicted_class]
-        no_defence_counter +=1 if adversarial_predicted_no_defence_class==original_predicted_class else 0
+        true_label_confidence_rate += confidence_rate[original_predicted_class]
+        no_defence_counter += 1 if adversarial_predicted_no_defence_class == original_predicted_class else 0
     success_defence_rate = success_defence_counter / iters
-    true_label_confidance_rate = true_label_confidance_rate / iters
-    print("true_label_confidance_rate =", true_label_confidance_rate)
-    print("no_defence_counter =", no_defence_counter/iters)
-    return success_defence_rate, true_label_confidance_rate
-def success_defence_rate_and_apply_low_pass_filter(iters=50, num_of_samples=10, visualize=False, noise_range=140, epsilon=0.2):
-    success_defence_counter = 0
-    for i in range(iters):
-        original_image, advesarial_image, original_predicted_class, adversarial_predicted_no_defence_class = generate_attack(
-            model, epsilon)
-        adversarial_predicted_with_defence = inference.predict(model, advesarial_image, num_of_samples=num_of_samples,
-                                                               noise_range=noise_range, visualize=visualize)
-        adversarial_predicted_with_defence_class = np.argmax(adversarial_predicted_with_defence.numpy())
-        success_defence_counter += 1 if adversarial_predicted_with_defence_class == original_predicted_class else 0
-    success_defence_rate = success_defence_counter / iters
-    return success_defence_rate
+    true_label_confidence_rate = true_label_confidence_rate / iters
+    return success_defence_rate, true_label_confidence_rate
 
-def success_rate_of_predicting_original_with_defence(iters=100, num_of_samples=10, noise_range=140, epsilon=0.2, visualize=False):
+
+def success_rate_of_predicting_original_with_defence(iters=100, num_of_samples=10, noise_range=140, epsilon=0.2,
+                                                     visualize=False):
     success_defence_counter = 0
     for i in range(iters):
         original_image, advers, original_predicted_class, _ = generate_attack(
@@ -192,7 +186,7 @@ def success_rate_of_predicting_original_with_defence(iters=100, num_of_samples=1
         original_image = convert_torch_to_tf(original_image)
         # print(original_image.shape)
         original_predicted_with_defence = inference.predict(model, original_image, num_of_samples=num_of_samples,
-                                                               noise_range=noise_range, visualize=visualize)
+                                                            noise_range=noise_range, visualize=visualize)
         original_predicted_with_defence_class = np.argmax(original_predicted_with_defence.numpy())
         success_defence_counter += 1 if original_predicted_with_defence_class == original_predicted_class else 0
     success_defence_rate = success_defence_counter / iters
@@ -216,14 +210,16 @@ def success_as_function_of_noise_rage(noise_ranges):  # Define noise range value
     plt.show()
 
 
-def success_as_function_of_num_of_samples(num_of_samples_ranges, noise_range=50, iters=50):  # Define noise range values to explore
+def success_as_function_of_num_of_samples(num_of_samples_ranges, noise_range=50,
+                                          iters=50):  # Define noise range values to explore
 
-    success_defence_rates = [success_defence_rate(num_of_samples=num_of_samples,noise_range=noise_range,iters=iters, epsilon=0.15)[0] for num_of_samples in
-                             num_of_samples_ranges]
+    success_defence_rates = [
+        success_defence_rate(num_of_samples=num_of_samples, noise_range=noise_range, iters=iters, epsilon=0.15)[0] for
+        num_of_samples in
+        num_of_samples_ranges]
 
     # Plotting
     plt.figure(figsize=(10, 6))
-    # plt.plot(noise_ranges, success_defence_rates, marker='o', linestyle='-', color='blue')
     plt.plot(num_of_samples_ranges, success_defence_rates, marker='o', linestyle='-', color='blue')
     plt.title('Success Defense Rate as a Function of Noise Range')
     plt.xlabel('Samples Range')
@@ -231,36 +227,46 @@ def success_as_function_of_num_of_samples(num_of_samples_ranges, noise_range=50,
     plt.grid(True)
     plt.show()
 
+
 def success_of_original_image_as_function_of_noise_range(noise_ranges, iters=50):
-    success_defence_rates = [success_rate_of_predicting_original_with_defence(noise_range=noise_range,iters=iters) for noise_range in noise_ranges]
+    success_defence_rates = [success_rate_of_predicting_original_with_defence(noise_range=noise_range, iters=iters) for
+                             noise_range in noise_ranges]
     # Plotting
     plt.figure(figsize=(10, 6))
     plt.plot(noise_ranges, success_defence_rates, marker='o', linestyle='-', color='blue')
-    # plt.plot(success_defence_rates, success_defence_rates, marker='o', linestyle='-', color='blue')
     plt.title('Success Defense Rate as a Function of Noise Range')
     plt.xlabel('Noise Range')
     plt.ylabel('Success Defense Rate')
     plt.grid(True)
     plt.show()
 
-def success_of_low_pass_as_function_of_noise_range(noise_ranges,iters=50):
-    success_defence_rates = [success_defence_rate_and_apply_low_pass_filter(noise_range=noise_range, iters=iters) for noise_range in noise_ranges]
-    # Plotting
-    plt.figure(figsize=(10, 6))
-    plt.plot(noise_ranges, success_defence_rates, marker='o', linestyle='-', color='blue')
-    # plt.plot(success_defence_rates, success_defence_rates, marker='o', linestyle='-', color='blue')
-    plt.title('Success of low-pass as a Function of Noise Range')
-    plt.xlabel('Noise Range')
-    plt.ylabel('Success Defense Rate')
-    plt.grid(True)
-    plt.show()
-
-
 
 noise_ranges = np.arange(30, 70, 7)
-num_of_samples_ranges=np.arange(10, 50, 10)
-# success_of_original_image_as_function_of_noise_range(noise_ranges=noise_ranges,iters=100)
-# success_of_low_pass_as_function_of_noise_range(noise_ranges=noise_ranges, iters=1)
-success_as_function_of_num_of_samples(num_of_samples_ranges=num_of_samples_ranges,noise_range=50,iters=100)
+num_of_samples_ranges = np.arange(1, 10, 2)
+success_as_function_of_num_of_samples(num_of_samples_ranges=num_of_samples_ranges, noise_range=110, iters=100)
 
-# success_as_function_of_num_of_samples_no_defence(num_of_samples_ranges=num_of_samples_ranges,noise_range=50,iters=100)
+# def success_of_low_pass_as_function_of_noise_range(noise_ranges, iters=50):
+#     success_defence_rates = [success_defence_rate_and_apply_low_pass_filter(noise_range=noise_range, iters=iters) for
+#                              noise_range in noise_ranges]
+#     # Plotting
+#     plt.figure(figsize=(10, 6))
+#     plt.plot(noise_ranges, success_defence_rates, marker='o', linestyle='-', color='blue')
+#     # plt.plot(success_defence_rates, success_defence_rates, marker='o', linestyle='-', color='blue')
+#     plt.title('Success of low-pass as a Function of Noise Range')
+#     plt.xlabel('Noise Range')
+#     plt.ylabel('Success Defense Rate')
+#     plt.grid(True)
+#     plt.show()
+
+# def success_defence_rate_and_apply_low_pass_filter(iters=50, num_of_samples=10, visualize=False, noise_range=140,
+#                                                    epsilon=0.2):
+#     success_defence_counter = 0
+#     for i in range(iters):
+#         original_image, advesarial_image, original_predicted_class, adversarial_predicted_no_defence_class = generate_attack(
+#             model, epsilon)
+#         adversarial_predicted_with_defence = inference.predict(model, advesarial_image, num_of_samples=num_of_samples,
+#                                                                noise_range=noise_range, visualize=visualize)
+#         adversarial_predicted_with_defence_class = np.argmax(adversarial_predicted_with_defence.numpy())
+#         success_defence_counter += 1 if adversarial_predicted_with_defence_class == original_predicted_class else 0
+#     success_defence_rate = success_defence_counter / iters
+#     return success_defence_rate
