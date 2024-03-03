@@ -8,19 +8,25 @@ import torch.optim as optim
 from torchvision import transforms, datasets
 from inference import predict
 
-os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
+import warnings
 
+# Filter out the specific warning
+warnings.filterwarnings("ignore", message="dropout2d: Received a 2-D input to dropout2d, which is deprecated and will result in an error in a future release.")
+
+
+os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 BASE_MODEL_PATH = 'models/base_model.pth'
 F_MODEL_PATH = 'models/f_model.pth'
 F1_MODEL_PATH = 'models/f1_model.pth'
 
-np.random.seed(42)
-torch.manual_seed(42)
+# np.random.seed(42)
+# torch.manual_seed(42)
 
 transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.0,), (1.0,))])
 dataset = datasets.MNIST(root='./data', train=True, transform=transform, download=True)
 train_set, val_set = torch.utils.data.random_split(dataset, [50000, 10000])
 test_set = datasets.MNIST(root='./data', train=False, transform=transform, download=True)
+test_set = torch.utils.data.Subset(test_set, range(500))
 train_loader = torch.utils.data.DataLoader(train_set, batch_size=1, shuffle=True)
 val_loader = torch.utils.data.DataLoader(val_set, batch_size=1, shuffle=True)
 test_loader = torch.utils.data.DataLoader(test_set, batch_size=1, shuffle=True)
@@ -119,7 +125,7 @@ def base_test(model, device, test_loader, epsilon, attack, with_majority_defense
             perturbed_data = mifgsm_attack(data, epsilon, data_grad)
 
         if with_majority_defense:
-            output = predict(model, perturbed_data, num_of_samples=1)
+            output = predict(model, perturbed_data)
         else:
             output = model(perturbed_data)
         final_pred = output.max(1, keepdim=True)[1]
@@ -140,66 +146,44 @@ def base_test(model, device, test_loader, epsilon, attack, with_majority_defense
 
 
 def attacks(model):
-    epsilons = [0, 0.007, 0.01, 0.02, 0.03, 0.05, 0.1, 0.2, 0.3]
-    epsilons = epsilons[-1:]
+    epsilons = [0, 0.1, 0.2, 0.3]
     for attack in ("fgsm", "ifgsm", "mifgsm"):
         accuracies = []
+        accuracies_maj_def = []
         examples = []
         for eps in epsilons:
             acc, ex = base_test(model, device, test_loader, eps, attack)
             accuracies.append(acc)
             examples.append(ex)
-        plt.figure(figsize=(5, 5))
-        plt.plot(epsilons, accuracies, "*-")
+            acc_maj_def, _ = base_test(model, device, test_loader, eps, attack, True)
+            accuracies_maj_def.append(acc_maj_def)
+        plt.figure(figsize=(8, 5))
+        plt.plot(epsilons, accuracies, "*-", label="Without Majority Voting Defense")
+        plt.plot(epsilons, accuracies_maj_def, "o-", label="With Majority Voting Defense")
         plt.title(attack)
         plt.xlabel("Epsilon")
         plt.ylabel("Accuracy")
+        plt.legend()
+        plt.grid(True)
         plt.show()
 
-        cnt = 0
-        plt.figure(figsize=(8, 10))
-        for i in range(len(epsilons)):
-            for j in range(len(examples[i])):
-                cnt += 1
-                plt.subplot(len(epsilons), len(examples[0]), cnt)
-                plt.xticks([], [])
-                plt.yticks([], [])
-                if j == 0:
-                    plt.ylabel("Eps: {}".format(epsilons[i]), fontsize=14)
-                orig, adv, ex = examples[i][j]
-                plt.title("{} -> {}".format(orig, adv))
-                plt.imshow(ex, cmap="gray")
-        plt.tight_layout()
-        plt.show()
+        # cnt = 0
+        # plt.figure(figsize=(8, 10))
+        # for i in range(len(epsilons)):
+        #     for j in range(len(examples[i])):
+        #         cnt += 1
+        #         plt.subplot(len(epsilons), len(examples[0]), cnt)
+        #         plt.xticks([], [])
+        #         plt.yticks([], [])
+        #         if j == 0:
+        #             plt.ylabel("Eps: {}".format(epsilons[i]), fontsize=14)
+        #         orig, adv, ex = examples[i][j]
+        #         plt.title("{} -> {}".format(orig, adv))
+        #         plt.imshow(ex, cmap="gray")
+        # plt.tight_layout()
+        # plt.show()
 
-        accuracies = []
-        examples = []
-        for eps in epsilons:
-            acc, ex = base_test(model, device, test_loader, eps, attack, True)
-            accuracies.append(acc)
-            examples.append(ex)
-        plt.figure(figsize=(5, 5))
-        plt.plot(epsilons, accuracies, "*-")
-        plt.title(attack + ' Majority Voting Defense')
-        plt.xlabel("Epsilon")
-        plt.ylabel("Accuracy")
-        plt.show()
 
-        cnt = 0
-        plt.figure(figsize=(8, 10))
-        for i in range(len(epsilons)):
-            for j in range(len(examples[i])):
-                cnt += 1
-                plt.subplot(len(epsilons), len(examples[0]), cnt)
-                plt.xticks([], [])
-                plt.yticks([], [])
-                if j == 0:
-                    plt.ylabel("Eps: {}".format(epsilons[i]), fontsize=14)
-                orig, adv, ex = examples[i][j]
-                plt.title("{} -> {}".format(orig, adv))
-                plt.imshow(ex, cmap="gray")
-        plt.tight_layout()
-        plt.show()
 
 
 class NetF(nn.Module):
@@ -261,16 +245,16 @@ def defense(device, train_loader, val_loader, test_loader, epochs, Temp, epsilon
         model, lossF, val_lossF = defense_fit(modelF, device, optimizerF, schedulerF, criterion, train_loader, val_loader, Temp,
                                        epochs)
         torch.save(model, F_MODEL_PATH)
-    else:
-        modelF = torch.load(F_MODEL_PATH)
 
-    fig = plt.figure(figsize=(5, 5))
-    plt.plot(np.arange(1, epochs + 1), lossF, "*-", label="Loss")
-    plt.plot(np.arange(1, epochs + 1), val_lossF, "o-", label="Val Loss")
-    plt.title("Network F")
-    plt.xlabel("Num of epochs")
-    plt.legend()
-    plt.show()
+        fig = plt.figure(figsize=(5, 5))
+        plt.plot(np.arange(1, epochs + 1), lossF, "*-", label="Loss")
+        plt.plot(np.arange(1, epochs + 1), val_lossF, "o-", label="Val Loss")
+        plt.title("Network F")
+        plt.xlabel("Num of epochs")
+        plt.legend()
+        plt.show()
+    else:
+        modelF = torch.load(F_MODEL_PATH, map_location=torch.device('cpu'))
 
     # converting target labels to soft labels
     for data in train_loader:
@@ -286,80 +270,57 @@ def defense(device, train_loader, val_loader, test_loader, epochs, Temp, epsilon
         model, lossF1, val_lossF1 = defense_fit(modelF1, device, optimizerF1, schedulerF1, criterion, train_loader, val_loader,
                                          Temp,
                                          epochs)
+
+        fig = plt.figure(figsize=(5, 5))
+        plt.plot(np.arange(1, epochs + 1), lossF1, "*-", label="Loss")
+        plt.plot(np.arange(1, epochs + 1), val_lossF1, "o-", label="Val Loss")
+        plt.title("Network F'")
+        plt.xlabel("Num of epochs")
+        plt.legend()
+        plt.show()
+
         torch.save(model, F1_MODEL_PATH)
     else:
-        modelF1 = torch.load(F1_MODEL_PATH)
-
-    fig = plt.figure(figsize=(5, 5))
-    plt.plot(np.arange(1, epochs + 1), lossF1, "*-", label="Loss")
-    plt.plot(np.arange(1, epochs + 1), val_lossF1, "o-", label="Val Loss")
-    plt.title("Network F'")
-    plt.xlabel("Num of epochs")
-    plt.legend()
-    plt.show()
+        modelF1 = torch.load(F1_MODEL_PATH, map_location=torch.device('cpu'))
 
     model = NetF1().to(device)
     model.load_state_dict(modelF1.state_dict())
     for attack in ("fgsm", "ifgsm", "mifgsm"):
         accuracies = []
+        accuracies_maj_def = []
         examples = []
         for eps in epsilons:
-            acc, ex = defense_test(model, device, test_loader, eps, 1, "fgsm")
+            acc, ex = defense_test(model, device, test_loader, eps, 1, attack)
             accuracies.append(acc)
             examples.append(ex)
-
-        plt.figure(figsize=(5, 5))
-        plt.plot(epsilons, accuracies, "*-")
+            acc_maj_def, _ = defense_test(model, device, test_loader, eps, 1, attack=attack, with_majority_voting=True)
+            accuracies_maj_def.append(acc_maj_def)
+        plt.figure(figsize=(8, 5))
+        plt.plot(epsilons, accuracies, "*-", label="Without Majority Voting Defense")
+        plt.plot(epsilons, accuracies_maj_def, "o-", label="With Majority Voting Defense")
         plt.title(attack)
         plt.xlabel("Epsilon")
         plt.ylabel("Accuracy")
+        plt.legend()
+        plt.grid(True)
         plt.show()
 
-        cnt = 0
-        plt.figure(figsize=(8, 10))
-        for i in range(len(epsilons)):
-            for j in range(len(examples[i])):
-                cnt += 1
-                plt.subplot(len(epsilons), len(examples[0]), cnt)
-                plt.xticks([], [])
-                plt.yticks([], [])
-                if j == 0:
-                    plt.ylabel("Eps: {}".format(epsilons[i]), fontsize=14)
-                orig, adv, ex = examples[i][j]
-                plt.title("{} -> {}".format(orig, adv))
-                plt.imshow(ex, cmap="gray")
-        plt.tight_layout()
-        plt.show()
+        # cnt = 0
+        # plt.figure(figsize=(8, 10))
+        # for i in range(len(epsilons)):
+        #     for j in range(len(examples[i])):
+        #         cnt += 1
+        #         plt.subplot(len(epsilons), len(examples[0]), cnt)
+        #         plt.xticks([], [])
+        #         plt.yticks([], [])
+        #         if j == 0:
+        #             plt.ylabel("Eps: {}".format(epsilons[i]), fontsize=14)
+        #         orig, adv, ex = examples[i][j]
+        #         plt.title("{} -> {}".format(orig, adv))
+        #         plt.imshow(ex, cmap="gray")
+        # plt.tight_layout()
+        # plt.show()
 
-        accuracies = []
-        examples = []
-        for eps in epsilons:
-            acc, ex = defense_test(model, device, test_loader, eps, 1, "fgsm", True)
-            accuracies.append(acc)
-            examples.append(ex)
-
-        plt.figure(figsize=(5, 5))
-        plt.plot(epsilons, accuracies, "*-")
-        plt.title(attack + ' Majority Voting Defense')
-        plt.xlabel("Epsilon")
-        plt.ylabel("Accuracy")
-        plt.show()
-
-        cnt = 0
-        plt.figure(figsize=(8, 10))
-        for i in range(len(epsilons)):
-            for j in range(len(examples[i])):
-                cnt += 1
-                plt.subplot(len(epsilons), len(examples[0]), cnt)
-                plt.xticks([], [])
-                plt.yticks([], [])
-                if j == 0:
-                    plt.ylabel("Eps: {}".format(epsilons[i]), fontsize=14)
-                orig, adv, ex = examples[i][j]
-                plt.title("{} -> {}".format(orig, adv))
-                plt.imshow(ex, cmap="gray")
-        plt.tight_layout()
-        plt.show()
 
 def main():
     if not os.path.exists(BASE_MODEL_PATH):
@@ -369,11 +330,10 @@ def main():
         torch.save(model, BASE_MODEL_PATH)
     else:
         model = torch.load(BASE_MODEL_PATH, map_location=torch.device('cpu'))
-    # attacks(model)
+    attacks(model)
     temp = 100
     epochs = 10
-    epsilons = [0, 0.007, 0.01, 0.02, 0.03, 0.05, 0.1, 0.2, 0.3]
-    epsilons = epsilons[-1:]
+    epsilons = [0, 0.1, 0.2, 0.3]
     defense(device, train_loader, val_loader, test_loader, epochs, temp, epsilons)
 
 def fgsm_attack(input, epsilon, data_grad):
@@ -462,8 +422,8 @@ def defense_test(model, device, test_loader, epsilon, Temp, attack, with_majorit
         elif attack == "mifgsm":
             perturbed_data = mifgsm_attack(data, epsilon, data_grad)
 
-        if with_majority_defense:
-            output = predict(model, perturbed_data, num_of_samples=1)
+        if with_majority_voting:
+            output = predict(model, perturbed_data)
         else:
             output = model(perturbed_data)
         final_pred = output.max(1, keepdim=True)[1]
