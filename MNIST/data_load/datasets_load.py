@@ -2,7 +2,7 @@ import random
 
 import torchvision
 
-path = '.'
+path = ''
 
 def get_CIFAR10(path=path, train=True, download=True):
     CIFAR10 = torchvision.datasets.CIFAR10(root=path, train=train, download=download)

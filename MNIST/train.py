@@ -15,9 +15,9 @@ warnings.filterwarnings("ignore",
                         message="dropout2d: Received a 2-D input to dropout2d, which is deprecated and will result in an error in a future release.")
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
-BASE_MODEL_PATH = 'models/base_model.pth'
-F_MODEL_PATH = 'models/f_model.pth'
-F1_MODEL_PATH = 'models/f1_model.pth'
+BASE_MODEL_PATH = 'MNIST/models/base_model.pth'
+F_MODEL_PATH = 'MNIST/models/f_model.pth'
+F1_MODEL_PATH = 'MNIST/models/f1_model.pth'
 
 np.random.seed(42)
 torch.manual_seed(42)
