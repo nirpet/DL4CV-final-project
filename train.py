@@ -11,16 +11,16 @@ from inference import predict
 import warnings
 
 # Filter out the specific warning
-warnings.filterwarnings("ignore", message="dropout2d: Received a 2-D input to dropout2d, which is deprecated and will result in an error in a future release.")
+warnings.filterwarnings("ignore",
+                        message="dropout2d: Received a 2-D input to dropout2d, which is deprecated and will result in an error in a future release.")
 
-
-os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 BASE_MODEL_PATH = 'models/base_model.pth'
 F_MODEL_PATH = 'models/f_model.pth'
 F1_MODEL_PATH = 'models/f1_model.pth'
 
-# np.random.seed(42)
-# torch.manual_seed(42)
+np.random.seed(42)
+torch.manual_seed(42)
 
 transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.0,), (1.0,))])
 dataset = datasets.MNIST(root='./data', train=True, transform=transform, download=True)
@@ -102,8 +102,10 @@ def training_results(loss, val_loss):
     plt.show()
 
 
-def base_test(model, device, test_loader, epsilon, attack, with_majority_defense=False):
+def base_test(model, device, test_loader, epsilon, attack):
     correct = 0
+    correct_maj = 0
+    diff_maj = 0
     adv_examples = []
     for data, target in test_loader:
         data, target = data.to(device), target.to(device)
@@ -121,14 +123,12 @@ def base_test(model, device, test_loader, epsilon, attack, with_majority_defense
             perturbed_data = fgsm_attack(data, epsilon, data_grad)
         elif attack == "ifgsm":
             perturbed_data = ifgsm_attack(data, epsilon, data_grad)
-        elif attack == "mifgsm":
-            perturbed_data = mifgsm_attack(data, epsilon, data_grad)
 
-        if with_majority_defense:
-            output = predict(model, perturbed_data)
-        else:
-            output = model(perturbed_data)
+        output = model(perturbed_data)
+        output_majority = predict(model, perturbed_data)
+
         final_pred = output.max(1, keepdim=True)[1]
+        final_pred_maj = output_majority
         if final_pred.item() == target.item():
             correct += 1
             if (epsilon == 0) and (len(adv_examples) < 5):
@@ -139,28 +139,41 @@ def base_test(model, device, test_loader, epsilon, attack, with_majority_defense
                 adv_ex = perturbed_data.squeeze().detach().cpu().numpy()
                 adv_examples.append((init_pred.item(), final_pred.item(), adv_ex))
 
-    final_acc = correct / float(len(test_loader))
-    print("Epsilon: {}\tTest Accuracy = {} / {} = {}".format(epsilon, correct, len(test_loader), final_acc))
+        if final_pred_maj.item() == target.item():
+            correct_maj += 1
+        # else:
+        #     test = predict(model, perturbed_data, visualize=True)
 
-    return final_acc, adv_examples
+        if final_pred_maj.item() != final_pred.item():
+            diff_maj += 1
+
+    final_acc = correct / float(len(test_loader))
+    final_acc_maj = correct_maj / float(len(test_loader))
+    print(
+        "Base Model - Epsilon: {}\tTest Accuracy = {} / {} = {}".format(epsilon, correct, len(test_loader), final_acc))
+    print("Majority Voting - Epsilon: {}\tTest Accuracy = {} / {} = {}".format(epsilon, correct_maj, len(test_loader),
+                                                                               final_acc_maj))
+
+    return final_acc, final_acc_maj, adv_examples
 
 
 def attacks(model):
     epsilons = [0, 0.1, 0.2, 0.3]
-    for attack in ("fgsm", "ifgsm", "mifgsm"):
+    # epsilons = [0.2, 0.3]
+    for attack in ("fgsm", "ifgsm"):
+        # for attack in ("fgsm"):
         accuracies = []
         accuracies_maj_def = []
         examples = []
         for eps in epsilons:
-            acc, ex = base_test(model, device, test_loader, eps, attack)
+            acc, acc_maj_def, ex = base_test(model, device, test_loader, eps, attack)
             accuracies.append(acc)
-            examples.append(ex)
-            acc_maj_def, _ = base_test(model, device, test_loader, eps, attack, True)
             accuracies_maj_def.append(acc_maj_def)
+            examples.append(ex)
         plt.figure(figsize=(8, 5))
         plt.plot(epsilons, accuracies, "*-", label="Without Majority Voting Defense")
         plt.plot(epsilons, accuracies_maj_def, "o-", label="With Majority Voting Defense")
-        plt.title(attack)
+        plt.title('Base Model: ' + attack)
         plt.xlabel("Epsilon")
         plt.ylabel("Accuracy")
         plt.legend()
@@ -182,8 +195,6 @@ def attacks(model):
         #         plt.imshow(ex, cmap="gray")
         # plt.tight_layout()
         # plt.show()
-
-
 
 
 class NetF(nn.Module):
@@ -242,8 +253,9 @@ def defense(device, train_loader, val_loader, test_loader, epochs, Temp, epsilon
         optimizerF = optim.Adam(modelF.parameters(), lr=0.0001, betas=(0.9, 0.999))
         schedulerF = optim.lr_scheduler.ReduceLROnPlateau(optimizerF, mode='min', factor=0.1, patience=3)
         criterion = nn.NLLLoss()
-        model, lossF, val_lossF = defense_fit(modelF, device, optimizerF, schedulerF, criterion, train_loader, val_loader, Temp,
-                                       epochs)
+        model, lossF, val_lossF = defense_fit(modelF, device, optimizerF, schedulerF, criterion, train_loader,
+                                              val_loader, Temp,
+                                              epochs)
         torch.save(model, F_MODEL_PATH)
 
         fig = plt.figure(figsize=(5, 5))
@@ -267,9 +279,10 @@ def defense(device, train_loader, val_loader, test_loader, epochs, Temp, epsilon
         optimizerF1 = optim.Adam(modelF1.parameters(), lr=0.0001, betas=(0.9, 0.999))
         schedulerF1 = optim.lr_scheduler.ReduceLROnPlateau(optimizerF1, mode='min', factor=0.1, patience=3)
         criterion = nn.NLLLoss()
-        model, lossF1, val_lossF1 = defense_fit(modelF1, device, optimizerF1, schedulerF1, criterion, train_loader, val_loader,
-                                         Temp,
-                                         epochs)
+        model, lossF1, val_lossF1 = defense_fit(modelF1, device, optimizerF1, schedulerF1, criterion, train_loader,
+                                                val_loader,
+                                                Temp,
+                                                epochs)
 
         fig = plt.figure(figsize=(5, 5))
         plt.plot(np.arange(1, epochs + 1), lossF1, "*-", label="Loss")
@@ -285,20 +298,19 @@ def defense(device, train_loader, val_loader, test_loader, epochs, Temp, epsilon
 
     model = NetF1().to(device)
     model.load_state_dict(modelF1.state_dict())
-    for attack in ("fgsm", "ifgsm", "mifgsm"):
+    for attack in ("fgsm", "ifgsm"):
         accuracies = []
         accuracies_maj_def = []
         examples = []
         for eps in epsilons:
-            acc, ex = defense_test(model, device, test_loader, eps, 1, attack)
+            acc, acc_maj_def, ex = defense_test(model, device, test_loader, eps, 1, attack)
             accuracies.append(acc)
-            examples.append(ex)
-            acc_maj_def, _ = defense_test(model, device, test_loader, eps, 1, attack=attack, with_majority_voting=True)
             accuracies_maj_def.append(acc_maj_def)
+            examples.append(ex)
         plt.figure(figsize=(8, 5))
         plt.plot(epsilons, accuracies, "*-", label="Without Majority Voting Defense")
         plt.plot(epsilons, accuracies_maj_def, "o-", label="With Majority Voting Defense")
-        plt.title(attack)
+        plt.title('Adversarial Trained Model: ' + attack)
         plt.xlabel("Epsilon")
         plt.ylabel("Accuracy")
         plt.legend()
@@ -336,6 +348,7 @@ def main():
     epsilons = [0, 0.1, 0.2, 0.3]
     defense(device, train_loader, val_loader, test_loader, epochs, temp, epsilons)
 
+
 def fgsm_attack(input, epsilon, data_grad):
     pert_out = input + epsilon * data_grad.sign()
     pert_out = torch.clamp(pert_out, 0, 1)
@@ -348,21 +361,6 @@ def ifgsm_attack(input, epsilon, data_grad):
     pert_out = input
     for i in range(iter - 1):
         pert_out = pert_out + alpha * data_grad.sign()
-        pert_out = torch.clamp(pert_out, 0, 1)
-        if torch.norm((pert_out - input), p=float('inf')) > epsilon:
-            break
-    return pert_out
-
-
-def mifgsm_attack(input, epsilon, data_grad):
-    iter = 10
-    decay_factor = 1.0
-    pert_out = input
-    alpha = epsilon / iter
-    g = 0
-    for i in range(iter - 1):
-        g = decay_factor * g + data_grad / torch.norm(data_grad, p=1)
-        pert_out = pert_out + alpha * torch.sign(g)
         pert_out = torch.clamp(pert_out, 0, 1)
         if torch.norm((pert_out - input), p=float('inf')) > epsilon:
             break
@@ -401,6 +399,8 @@ def defense_fit(model, device, optimizer, scheduler, criterion, train_loader, va
 
 def defense_test(model, device, test_loader, epsilon, Temp, attack, with_majority_voting=False):
     correct = 0
+    correct_maj = 0
+    diff_maj = 0
     adv_examples = []
     for data, target in test_loader:
         data, target = data.to(device), target.to(device)
@@ -419,14 +419,13 @@ def defense_test(model, device, test_loader, epsilon, Temp, attack, with_majorit
             perturbed_data = fgsm_attack(data, epsilon, data_grad)
         elif attack == "ifgsm":
             perturbed_data = ifgsm_attack(data, epsilon, data_grad)
-        elif attack == "mifgsm":
-            perturbed_data = mifgsm_attack(data, epsilon, data_grad)
 
-        if with_majority_voting:
-            output = predict(model, perturbed_data)
-        else:
-            output = model(perturbed_data)
+        output = model(perturbed_data)
+        output_majority = predict(model, perturbed_data)
+
         final_pred = output.max(1, keepdim=True)[1]
+        final_pred_maj = output_majority
+
         if final_pred.item() == target.item():
             correct += 1
             if (epsilon == 0) and (len(adv_examples) < 5):
@@ -437,10 +436,24 @@ def defense_test(model, device, test_loader, epsilon, Temp, attack, with_majorit
                 adv_ex = perturbed_data.squeeze().detach().cpu().numpy()
                 adv_examples.append((init_pred.item(), final_pred.item(), adv_ex))
 
-    final_acc = correct / float(len(test_loader))
-    print("Epsilon: {}\tTest Accuracy = {} / {} = {}".format(epsilon, correct, len(test_loader), final_acc))
+        if final_pred_maj.item() == target.item():
+            correct_maj += 1
+        # else:
+        #     test = predict(model, perturbed_data, visualize=True)
 
-    return final_acc, adv_examples
+        if final_pred_maj.item() != final_pred.item():
+            diff_maj += 1
+
+    final_acc = correct / float(len(test_loader))
+    final_acc_maj = correct_maj / float(len(test_loader))
+    print("Base Defensive Model - Epsilon: {}\tTest Accuracy = {} / {} = {}".format(epsilon, correct, len(test_loader),
+                                                                                    final_acc))
+    print(
+        "Defensive Model with Majority Voting - Epsilon: {}\tTest Accuracy = {} / {} = {}".format(epsilon, correct_maj,
+                                                                                                  len(test_loader),
+                                                                                                  final_acc_maj))
+
+    return final_acc, final_acc_maj, adv_examples
 
 
 if __name__ == "__main__":
