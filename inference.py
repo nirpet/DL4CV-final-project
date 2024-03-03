@@ -59,7 +59,7 @@ def generate_noisy_images(image, num_of_samples, noise_range):
     return noisy_images
 
 
-def predict(model, input_image, num_of_samples=50, noise_range=150,  visualize=False):
+def predict(model, input_image, num_of_samples=10, noise_range=100,  visualize=False):
     """
     Perform inference using the loaded model on noisy samples of an input image,
     and return the majority vote prediction.
