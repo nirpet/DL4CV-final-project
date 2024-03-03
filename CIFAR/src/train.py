@@ -3,11 +3,11 @@ import torch.nn as nn
 import torchvision.transforms as T
 import torch.optim as optim
 import torchvision
-import utils
+import CIFAR.utils
 import os
 import time
 from torch.utils.tensorboard import SummaryWriter 
-from attack import *
+from CIFAR.attack import *
 from tqdm import tqdm
 
 class Trainer:

@@ -4,7 +4,7 @@ import json
 def parse_args():
     desc ="Pytorch Adversarial Attack"
     parser = argparse.ArgumentParser(description=desc)
-    parser.add_argument('--cfg_path', type=str, default='./config/train.json')
+    parser.add_argument('--cfg_path', type=str, default='./CIFAR/config/train.json')
     return parser.parse_args()
 
 def get_configs(args):

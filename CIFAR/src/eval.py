@@ -3,15 +3,15 @@ import torchvision.transforms as T
 import torchvision
 import os
 from tqdm import tqdm
-from attack import *
-from utils import Normalize_net
+from CIFAR.attack import *
+from CIFAR.utils import Normalize_net
 
 class Evaluator:
     def __init__(self, configs, model):
         self.configs = configs
         self.model = model
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        self.save_path = os.path.join(configs.save_path, configs.model_name)
+        self.save_path = configs.save_path + '/' + configs.model_name
         transform_test = T.Compose([
             T.ToTensor()
         ])
@@ -24,7 +24,7 @@ class Evaluator:
         else:
             self.model.to(self.device)
         
-        self._load_network(os.path.join(self.save_path, self.configs.phase, "best.pth"))
+        self._load_network(self.save_path + '/' + self.configs.phase + '/' + "best.pth")
         self.model = Normalize_net(self.model)
 
         attack_config = {
@@ -46,7 +46,7 @@ class Evaluator:
 
     def _load_network(self, checkpoint_path):
         print("Loading model from {} ...".format(checkpoint_path))
-        checkpoint = torch.load(checkpoint_path)
+        checkpoint = torch.load(checkpoint_path, map_location=torch.device(self.device))
         self.model.load_state_dict(checkpoint['model'])
         print("Loading Done..")
 

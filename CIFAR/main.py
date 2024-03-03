@@ -6,12 +6,12 @@ import numpy as np
 import os
 
 from tqdm import tqdm
-from cifar_model import *
-from attack import *
-from config import *
+from CIFAR.cifar_model import *
+from CIFAR.attack import *
+from CIFAR.config import *
 
-from src.train import Trainer
-from src.eval import Evaluator
+from CIFAR.src.train import Trainer
+from CIFAR.src.eval import Evaluator
 import json
 
 def main():
