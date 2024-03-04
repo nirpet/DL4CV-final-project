@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torchvision import transforms, datasets
-from inference import predict
+from inference import predict, predict_experiment
 
 import warnings
 
@@ -102,6 +102,78 @@ def training_results(loss, val_loss):
     plt.show()
 
 
+def experiment(model, data, perturbed_data, adv_pred, target_pred):
+    with torch.no_grad():# Create a figure with two subplots
+        fig, axs = plt.subplots(1, 3, figsize=(18, 5), gridspec_kw={'width_ratios': [1, 1, 3]})
+
+        # Plot the original image in the first subplot
+        axs[0].imshow(data.reshape((28,28)), cmap="gray")
+        axs[0].set_title('Original Image')
+        axs[0].axis('off')
+
+        # Plot the perturbed image in the second subplot
+        axs[1].imshow(perturbed_data.reshape((28,28)), cmap="gray")
+        axs[1].set_title('Perturbed Image')
+        axs[1].axis('off')
+
+        noise_range = [0, 10, 30, 50, 70, 100, 150, 200]
+        num_of_samples = 500
+        orig_accuracies = []
+        adv_accuracies = []
+        adv_conf_accuracies = []
+        orig_pred_probs = []
+        adv_pred_probs = []
+        for noise in noise_range:
+            orig_vicinity = predict_experiment(model, data, num_of_samples, noise)
+            adv_vicinity = predict_experiment(model, perturbed_data, num_of_samples, noise)
+
+            orig_prob = torch.sum(orig_vicinity, dim=0) / num_of_samples
+            adv_prob = torch.sum(adv_vicinity, dim=0) / num_of_samples
+
+            orig_accuracy = len(torch.where((orig_vicinity == nn.functional.one_hot(torch.tensor(target_pred), num_classes=10)).all(dim=1))[0]) / num_of_samples
+            orig_accuracies.append(orig_accuracy)
+            adv_accuracy = len(torch.where((adv_vicinity == nn.functional.one_hot(torch.tensor(target_pred), num_classes=10)).all(dim=1))[0]) / num_of_samples
+            adv_conf_accuracy = len(torch.where((adv_vicinity == nn.functional.one_hot(torch.tensor(int(adv_pred)), num_classes=10)).all(dim=1))[0]) / num_of_samples
+            adv_accuracies.append(adv_accuracy)
+            adv_conf_accuracies.append(adv_conf_accuracy)
+            orig_pred_probs.append(orig_prob)
+            adv_pred_probs.append(adv_prob)
+
+        axs[2].plot(noise_range, orig_accuracies, "*-", label="Original Image")
+        axs[2].plot(noise_range, adv_accuracies, "o-", label="Perturbed Image - Correct")
+        axs[2].plot(noise_range, adv_conf_accuracies, "x-", label="Perturbed Image - Adversarial")
+        axs[2].set_title('Accuracy in the Vicinity of the Image')
+        axs[2].set_xlabel("Noise Range")
+        axs[2].set_ylabel("Accuracy")
+        axs[2].legend()
+        axs[2].grid(True)
+        # plt.tight_layout()
+        plt.show()
+
+    # bar_width = 0.3
+    # for idx, noise in enumerate(noise_range):
+    #     plt.figure(figsize=(8, 5))
+    #     index = np.arange(10)
+    #     orig_bars = plt.bar(index + bar_width / 2, orig_pred_probs[idx], bar_width, color='b', label='Original Image')
+    #     adv_bars = plt.bar(index + 3 * bar_width / 2, adv_pred_probs[idx], bar_width, color='purple', label='Perturbed Image')
+    #
+    #     # Highlighting specific columns
+    #     orig_bars[target_pred].set_color('g')  # Set color of original image bar
+    #     adv_bars[adv_pred].set_color('r')  # Set color of perturbed image bar
+    #
+    #     plt.xlabel('Class')
+    #     plt.ylabel('Probability')
+    #     plt.title(f'Prediction Probabilities for Noise Range {noise}')
+    #     plt.xticks(np.arange(10))
+    #     plt.legend()
+    #     plt.grid(True)
+    #     plt.show()
+
+
+
+
+
+
 def base_test(model, device, test_loader, epsilon, attack):
     correct = 0
     correct_maj = 0
@@ -135,6 +207,7 @@ def base_test(model, device, test_loader, epsilon, attack):
                 adv_ex = perturbed_data.squeeze().detach().cpu().numpy()
                 adv_examples.append((init_pred.item(), final_pred.item(), adv_ex))
         else:
+            # experiment(model, data, perturbed_data, final_pred, target.item())
             if len(adv_examples) < 5:
                 adv_ex = perturbed_data.squeeze().detach().cpu().numpy()
                 adv_examples.append((init_pred.item(), final_pred.item(), adv_ex))
@@ -158,8 +231,7 @@ def base_test(model, device, test_loader, epsilon, attack):
 
 
 def attacks(model):
-    epsilons = [0, 0.1, 0.2, 0.3]
-    # epsilons = [0.2, 0.3]
+    epsilons = [0.2, 0.3]
     for attack in ("fgsm", "ifgsm"):
         # for attack in ("fgsm"):
         accuracies = []
@@ -342,10 +414,11 @@ def main():
         torch.save(model, BASE_MODEL_PATH)
     else:
         model = torch.load(BASE_MODEL_PATH, map_location=torch.device('cpu'))
-    attacks(model)
+    # attacks(model)
     temp = 100
     epochs = 10
-    epsilons = [0, 0.1, 0.2, 0.3]
+    # epsilons = [0, 0.1, 0.2, 0.3]
+    epsilons = [0.5]
     defense(device, train_loader, val_loader, test_loader, epochs, temp, epsilons)
 
 
@@ -397,7 +470,7 @@ def defense_fit(model, device, optimizer, scheduler, criterion, train_loader, va
     return model, train_loss, val_loss
 
 
-def defense_test(model, device, test_loader, epsilon, Temp, attack, with_majority_voting=False):
+def defense_test(model, device, test_loader, epsilon, Temp, attack):
     correct = 0
     correct_maj = 0
     diff_maj = 0
@@ -432,6 +505,7 @@ def defense_test(model, device, test_loader, epsilon, Temp, attack, with_majorit
                 adv_ex = perturbed_data.squeeze().detach().cpu().numpy()
                 adv_examples.append((init_pred.item(), final_pred.item(), adv_ex))
         else:
+            experiment(model, data, perturbed_data, final_pred, target.item())
             if len(adv_examples) < 5:
                 adv_ex = perturbed_data.squeeze().detach().cpu().numpy()
                 adv_examples.append((init_pred.item(), final_pred.item(), adv_ex))
