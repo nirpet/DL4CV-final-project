@@ -207,7 +207,7 @@ def base_test(model, device, test_loader, epsilon, attack):
                 adv_ex = perturbed_data.squeeze().detach().cpu().numpy()
                 adv_examples.append((init_pred.item(), final_pred.item(), adv_ex))
         else:
-            # experiment(model, data, perturbed_data, final_pred, target.item())
+            experiment(model, data, perturbed_data, final_pred, target.item())
             if len(adv_examples) < 5:
                 adv_ex = perturbed_data.squeeze().detach().cpu().numpy()
                 adv_examples.append((init_pred.item(), final_pred.item(), adv_ex))
@@ -340,6 +340,8 @@ def defense(device, train_loader, val_loader, test_loader, epochs, Temp, epsilon
     else:
         modelF = torch.load(F_MODEL_PATH, map_location=torch.device('cpu'))
 
+    modelF.eval()
+
     # converting target labels to soft labels
     for data in train_loader:
         input, label = data[0].to(device), data[1].to(device)
@@ -370,6 +372,8 @@ def defense(device, train_loader, val_loader, test_loader, epochs, Temp, epsilon
 
     model = NetF1().to(device)
     model.load_state_dict(modelF1.state_dict())
+    model.eval()
+
     for attack in ("fgsm", "ifgsm"):
         accuracies = []
         accuracies_maj_def = []
@@ -414,7 +418,9 @@ def main():
         torch.save(model, BASE_MODEL_PATH)
     else:
         model = torch.load(BASE_MODEL_PATH, map_location=torch.device('cpu'))
-    # attacks(model)
+
+    model.eval()
+    attacks(model)
     temp = 100
     epochs = 10
     # epsilons = [0, 0.1, 0.2, 0.3]
