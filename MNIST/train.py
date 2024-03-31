@@ -150,24 +150,24 @@ def experiment(model, data, perturbed_data, adv_pred, target_pred):
         # plt.tight_layout()
         plt.show()
 
-    # bar_width = 0.3
-    # for idx, noise in enumerate(noise_range):
-    #     plt.figure(figsize=(8, 5))
-    #     index = np.arange(10)
-    #     orig_bars = plt.bar(index + bar_width / 2, orig_pred_probs[idx], bar_width, color='b', label='Original Image')
-    #     adv_bars = plt.bar(index + 3 * bar_width / 2, adv_pred_probs[idx], bar_width, color='purple', label='Perturbed Image')
-    #
-    #     # Highlighting specific columns
-    #     orig_bars[target_pred].set_color('g')  # Set color of original image bar
-    #     adv_bars[adv_pred].set_color('r')  # Set color of perturbed image bar
-    #
-    #     plt.xlabel('Class')
-    #     plt.ylabel('Probability')
-    #     plt.title(f'Prediction Probabilities for Noise Range {noise}')
-    #     plt.xticks(np.arange(10))
-    #     plt.legend()
-    #     plt.grid(True)
-    #     plt.show()
+    bar_width = 0.3
+    for idx, noise in enumerate(noise_range):
+        plt.figure(figsize=(8, 5))
+        index = np.arange(10)
+        orig_bars = plt.bar(index + bar_width / 2, orig_pred_probs[idx], bar_width, color='b', label='Original Image')
+        adv_bars = plt.bar(index + 3 * bar_width / 2, adv_pred_probs[idx], bar_width, color='purple', label='Perturbed Image')
+
+        # Highlighting specific columns
+        orig_bars[target_pred].set_color('g')  # Set color of original image bar
+        adv_bars[adv_pred].set_color('r')  # Set color of perturbed image bar
+
+        plt.xlabel('Class')
+        plt.ylabel('Probability')
+        plt.title(f'Prediction Probabilities for Noise Range {noise}')
+        plt.xticks(np.arange(10))
+        plt.legend()
+        plt.grid(True)
+        plt.show()
 
 
 
@@ -197,7 +197,7 @@ def base_test(model, device, test_loader, epsilon, attack):
             perturbed_data = ifgsm_attack(data, epsilon, data_grad)
 
         output = model(perturbed_data)
-        output_majority = predict(model, perturbed_data)
+        output_majority = predict(model, perturbed_data, num_of_samples=15, noise_range=110)
 
         final_pred = output.max(1, keepdim=True)[1]
         final_pred_maj = output_majority
@@ -207,7 +207,7 @@ def base_test(model, device, test_loader, epsilon, attack):
                 adv_ex = perturbed_data.squeeze().detach().cpu().numpy()
                 adv_examples.append((init_pred.item(), final_pred.item(), adv_ex))
         else:
-            experiment(model, data, perturbed_data, final_pred, target.item())
+            # experiment(model, data, perturbed_data, final_pred, target.item())
             if len(adv_examples) < 5:
                 adv_ex = perturbed_data.squeeze().detach().cpu().numpy()
                 adv_examples.append((init_pred.item(), final_pred.item(), adv_ex))
@@ -231,7 +231,7 @@ def base_test(model, device, test_loader, epsilon, attack):
 
 
 def attacks(model):
-    epsilons = [0.2, 0.3]
+    epsilons = [0, 0.05, 0.1, 0.2, 0.3]
     for attack in ("fgsm", "ifgsm"):
         # for attack in ("fgsm"):
         accuracies = []
@@ -423,8 +423,8 @@ def main():
     attacks(model)
     temp = 100
     epochs = 10
-    # epsilons = [0, 0.1, 0.2, 0.3]
-    epsilons = [0.5]
+    epsilons = [0, 0.05, 0.1, 0.2, 0.3]
+    # epsilons = [0.5]
     defense(device, train_loader, val_loader, test_loader, epochs, temp, epsilons)
 
 
@@ -500,7 +500,7 @@ def defense_test(model, device, test_loader, epsilon, Temp, attack):
             perturbed_data = ifgsm_attack(data, epsilon, data_grad)
 
         output = model(perturbed_data)
-        output_majority = predict(model, perturbed_data)
+        output_majority = predict(model, perturbed_data, num_of_samples=100, noise_range=110)
 
         final_pred = output.max(1, keepdim=True)[1]
         final_pred_maj = output_majority
@@ -511,7 +511,7 @@ def defense_test(model, device, test_loader, epsilon, Temp, attack):
                 adv_ex = perturbed_data.squeeze().detach().cpu().numpy()
                 adv_examples.append((init_pred.item(), final_pred.item(), adv_ex))
         else:
-            experiment(model, data, perturbed_data, final_pred, target.item())
+            # experiment(model, data, perturbed_data, final_pred, target.item())
             if len(adv_examples) < 5:
                 adv_ex = perturbed_data.squeeze().detach().cpu().numpy()
                 adv_examples.append((init_pred.item(), final_pred.item(), adv_ex))
