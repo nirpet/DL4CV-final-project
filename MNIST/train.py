@@ -26,7 +26,7 @@ transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.0
 dataset = datasets.MNIST(root='./MNIST/data', train=True, transform=transform, download=True)
 train_set, val_set = torch.utils.data.random_split(dataset, [50000, 10000])
 test_set = datasets.MNIST(root='./MNIST/data', train=False, transform=transform, download=True)
-test_set = torch.utils.data.Subset(test_set, range(500))
+test_set = torch.utils.data.Subset(test_set, range(1000))
 train_loader = torch.utils.data.DataLoader(train_set, batch_size=1, shuffle=True)
 val_loader = torch.utils.data.DataLoader(val_set, batch_size=1, shuffle=True)
 test_loader = torch.utils.data.DataLoader(test_set, batch_size=1, shuffle=True)
@@ -174,7 +174,7 @@ def experiment(model, data, perturbed_data, adv_pred, target_pred):
 
 
 
-def base_test(model, device, test_loader, epsilon, attack):
+def base_test(model, device, test_loader, epsilon, attack, num_of_samples=15, noise_range=110):
     correct = 0
     correct_maj = 0
     diff_maj = 0
@@ -197,7 +197,7 @@ def base_test(model, device, test_loader, epsilon, attack):
             perturbed_data = ifgsm_attack(data, epsilon, data_grad)
 
         output = model(perturbed_data)
-        output_majority = predict(model, perturbed_data, num_of_samples=15, noise_range=110)
+        output_majority = predict(model, perturbed_data, num_of_samples=num_of_samples, noise_range=noise_range)
 
         final_pred = output.max(1, keepdim=True)[1]
         final_pred_maj = output_majority
@@ -232,25 +232,59 @@ def base_test(model, device, test_loader, epsilon, attack):
 
 def attacks(model):
     epsilons = [0, 0.05, 0.1, 0.2, 0.3]
+    # epsilons = [0.2]
+    # noise_ranges = np.array([10, 30, 50, 100, 125, 150, 200])
+    # num_of_samples_range = np.array([1, 5, 10, 15, 20, 30])
     for attack in ("fgsm", "ifgsm"):
         # for attack in ("fgsm"):
         accuracies = []
         accuracies_maj_def = []
-        examples = []
+        # examples = []
         for eps in epsilons:
-            acc, acc_maj_def, ex = base_test(model, device, test_loader, eps, attack)
-            accuracies.append(acc)
-            accuracies_maj_def.append(acc_maj_def)
-            examples.append(ex)
+                acc, acc_maj_def, ex = base_test(model, device, test_loader, eps, attack)
+                accuracies.append(acc)
+                accuracies_maj_def.append(acc_maj_def)
+                # examples.append(ex)
+            # for noise_range in noise_ranges:
+            #     acc, acc_maj_def, ex = base_test(model, device, test_loader, eps, attack, noise_range=noise_range)
+            #     accuracies.append(acc)
+            #     accuracies_maj_def.append(acc_maj_def)
+            #     # examples.append(ex)
+            # for num_of_samples in num_of_samples_range:
+            #     acc, acc_maj_def, ex = base_test(model, device, test_loader, eps, attack, num_of_samples=num_of_samples)
+            #     accuracies.append(acc)
+            #     accuracies_maj_def.append(acc_maj_def)
+                # examples.append(ex)
+
         plt.figure(figsize=(8, 5))
-        plt.plot(epsilons, accuracies, "*-", label="Without Majority Voting Defense")
-        plt.plot(epsilons, accuracies_maj_def, "o-", label="With Majority Voting Defense")
-        plt.title('Base Model: ' + attack)
-        plt.xlabel("Epsilon")
+        plt.plot((epsilons), accuracies, "*-", label="Without Majority Voting Defense")
+        plt.plot((epsilons), accuracies_maj_def, "o-", label="With Majority Voting Defense")
+        plt.title('Base Model Accuracy (epsilon=0.2): ' + attack)
+        plt.xlabel("Num of Samples")
         plt.ylabel("Accuracy")
         plt.legend()
         plt.grid(True)
         plt.show()
+
+        # plt.figure(figsize=(8, 5))
+        # plt.plot((noise_ranges / 255), accuracies, "*-", label="Without Majority Voting Defense")
+        # plt.plot((noise_ranges / 255), accuracies_maj_def, "o-", label="With Majority Voting Defense")
+        # plt.title('Base Model Accuracy (epsilon=0.2): ' + attack)
+        # plt.xlabel("Noise Range")
+        # plt.ylabel("Accuracy")
+        # plt.legend()
+        # plt.grid(True)
+        # plt.show()
+
+        # plt.figure(figsize=(8, 5))
+        # plt.plot((num_of_samples), accuracies, "*-", label="Without Majority Voting Defense")
+        # plt.plot((num_of_samples), accuracies_maj_def, "o-", label="With Majority Voting Defense")
+        # plt.title('Base Model Accuracy (epsilon=0.2): ' + attack)
+        # plt.xlabel("Noise Range")
+        # plt.ylabel("Accuracy")
+        # plt.legend()
+        # plt.grid(True)
+        # plt.show()
 
         # cnt = 0
         # plt.figure(figsize=(8, 10))
