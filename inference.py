@@ -1,8 +1,5 @@
 import torch
-import numpy as np
 import matplotlib.pyplot as plt
-import tensorflow as tf
-import cv2
 
 
 def visualize_images(images, num_rows=2, num_cols=5):
@@ -20,13 +17,14 @@ def visualize_images(images, num_rows=2, num_cols=5):
         for j in range(num_cols):
             index = i * num_cols + j
             if index < len(images):
-                axes[i, j].imshow(images[index].numpy().reshape(28, 28))
+                axes[i, j].imshow(images[index].reshape(28, 28), cmap='gray')
                 axes[i, j].axis('off')
             else:
                 axes[i, j].axis('off')
 
     plt.tight_layout()
     plt.show()
+
 
 def generate_noisy_images(image, num_of_samples, noise_range):
     """
@@ -35,6 +33,7 @@ def generate_noisy_images(image, num_of_samples, noise_range):
     Args:
     - image (torch.Tensor): Input image tensor.
     - num_of_samples (int): Number of noisy samples to generate.
+    - noise_range (float): Range of noise to add to the generated image.
 
     Returns:
     - noisy_images (torch.Tensor): Tensor containing noisy samples of the input image.
@@ -43,6 +42,7 @@ def generate_noisy_images(image, num_of_samples, noise_range):
     shape = list(image.shape)
     shape[0] = num_of_samples
     noisy_images = torch.empty(tuple(shape))
+
     # Gaussian noise
     # std_dev = 10
 
@@ -50,18 +50,16 @@ def generate_noisy_images(image, num_of_samples, noise_range):
     for i in range(num_of_samples):
         # Gaussian noise
         # noise = torch.randn(image.shape) * std_dev
-        noise = torch.randint(-noise_range, noise_range + 1, size=tuple(image.shape))/255
+        noise = torch.randint(-noise_range, noise_range + 1, size=tuple(image.shape)) / 255
+        noise = noise.to(image.device)
         noisy_image = image + noise
         noisy_image = torch.clamp(noisy_image, 0, 1)
-        # blurred_image = cv2.GaussianBlur(np.array(noisy_image).reshape(28, 28), (3, 3), 0)
-        #
-        # # If you need to convert it back to the original shape [1, 28, 28, 1]
-        # noisy_image = torch.tensor(blurred_image.reshape(1, 28, 28, 1))
         noisy_images[i] = noisy_image
 
     return noisy_images
 
-def predict(model, input_image, num_of_samples=10, noise_range = 150, visualize=False):
+
+def predict(model, input_image, num_of_samples=10, noise_range=100, visualize=False):
     """
     Perform inference using the loaded model on noisy samples of an input image,
     and return the majority vote prediction.
@@ -75,24 +73,17 @@ def predict(model, input_image, num_of_samples=10, noise_range = 150, visualize=
     Returns:
     - majority_vote_prediction (torch.Tensor): Majority vote prediction in one-hot format.
     """
-    # input_data = convert_tf_to_torch(input_image) if type(input_image) == tf.Tensor else input_image
-    input_data = convert_tf_to_torch(input_image)
-    # Apply Gaussian Blur (Lowpass Filter)
-    # Here, (3, 3) is the kernel size, and 0 lets OpenCV automatically select the sigma based on the kernel size
-    blurred_image = cv2.GaussianBlur(np.array(input_data).reshape(28, 28), (5, 5), 0)
-    #
-    # # If you need to convert it back to the original shape [1, 28, 28, 1]
-    input_data = blurred_image.reshape(1, 28, 28, 1)
-    input_data = torch.tensor(input_data)
+    input_data = input_image
     noisy_images = generate_noisy_images(input_data, num_of_samples, noise_range)
 
-    if visualize:
-        visualize_images(noisy_images)
-
-    predictions = torch.empty((len(noisy_images),10))
     with torch.no_grad():
+        if visualize:
+            visualize_images(noisy_images)
+
+        predictions = torch.empty((len(noisy_images), 10))
+
         for i in range(noisy_images.shape[0]):
-            prediction = convert_tf_to_torch(model(convert_torch_to_tf(noisy_images[i].unsqueeze(0))))
+            prediction = (model(noisy_images[i].unsqueeze(0)))
             predictions[i] = prediction.squeeze()
 
     # Discretize predictions to one-hot vectors
@@ -101,25 +92,36 @@ def predict(model, input_image, num_of_samples=10, noise_range = 150, visualize=
     one_hot_predictions.scatter_(1, max_indices.unsqueeze(1), 1)
 
     # Calculate the mode (most common value) of the one-hot predictions
-    confidance_rate = torch.sum(one_hot_predictions,dim=0)/num_of_samples
-    # print("Confidence: ", confidance_rate)
-    majority_vote_prediction = torch.mode(one_hot_predictions, dim=0)[0]
+    # majority_vote_prediction = torch.mode(one_hot_predictions, dim=0)[0]
+    votes = torch.sum(one_hot_predictions, dim=0)
+    majority_vote_prediction = torch.argmax(votes)
+
+    return majority_vote_prediction.unsqueeze(0).unsqueeze(0)
 
 
-    # print(majority_vote_prediction)
-    return majority_vote_prediction, confidance_rate
+def predict_experiment(model, input_image, num_of_samples=10, noise_range=100, visualize=False):
+    input_data = input_image
+    noisy_images = generate_noisy_images(input_data, num_of_samples, noise_range)
 
-def convert_tf_to_torch(tf_input):
-    np_image = tf_input.numpy()
+    with torch.no_grad():
+        if visualize:
+            visualize_images(noisy_images)
 
-    # Step 2: Convert NumPy array to PyTorch tensor
-    return torch.from_numpy(np_image)
+        predictions = torch.empty((len(noisy_images), 10))
 
-def convert_torch_to_tf(torch_input):
-    # Assuming torch_tensor is your PyTorch tensor
-    # Step 1: Move tensor to CPU if it's on GPU, then convert it to NumPy array
-    torch_tensor_cpu = torch_input.cpu().numpy()
+        for i in range(noisy_images.shape[0]):
+            prediction = (model(noisy_images[i].unsqueeze(0)))
+            predictions[i] = prediction.squeeze()
 
-    # Step 2: Convert NumPy array to TensorFlow tensor
-    tensor_flow = tf.convert_to_tensor(torch_tensor_cpu)
-    return tensor_flow
+    # Discretize predictions to one-hot vectors
+    one_hot_predictions = torch.zeros_like(predictions)
+    max_indices = torch.argmax(predictions, dim=1)
+    one_hot_predictions.scatter_(1, max_indices.unsqueeze(1), 1)
+    #  votes = torch.sum(one_hot_predictions, dim=0)
+
+    # Calculate the mode (most common value) of the one-hot predictions
+    # majority_vote_prediction = torch.mode(one_hot_predictions, dim=0)[0]
+
+    return one_hot_predictions
+    # return majority_vote_prediction.unsqueeze(0).unsqueeze(0)
+
